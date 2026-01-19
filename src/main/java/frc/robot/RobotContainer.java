@@ -15,7 +15,7 @@ import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandGenericHID;
-import frc.robot.subsystems.TurretSubsystem;
+import frc.robot.subsystems.turret.TurretSubsystem;
 import frc.robot.subsystems.drive.DemoDrive;
 import frc.robot.subsystems.vision.Vision;
 import frc.robot.subsystems.vision.VisionIO;
