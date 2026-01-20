@@ -14,7 +14,7 @@ public class TurretSubsystem extends SubsystemBase {
 
 
   //Constants
-  private final double kmaxAccelleration = Math.toRadians(999999999);  //    4 rad/s^2 max
+  private final double kmaxAccelleration = Math.toRadians(10);  //    10 rad/s^2 max
   //TODO: tune
   private final double kmaxVelocity = Math.toRadians(10);    //10 rad/s max
   private static final double kP = 0.035;   //Proportional
@@ -28,9 +28,9 @@ public class TurretSubsystem extends SubsystemBase {
   private final NetworkTable limelightTable;
 
   //
-  private TrapezoidProfile profile =
+  private final TrapezoidProfile profile =
           new TrapezoidProfile(
-                  new TrapezoidProfile.Constraints(kmaxVelocity, kmaxVelocity));
+                  new TrapezoidProfile.Constraints(kmaxVelocity, kmaxAccelleration));
 private TrapezoidProfile.State setpoint = new TrapezoidProfile.State();
 
 
@@ -53,35 +53,88 @@ private TrapezoidProfile.State setpoint = new TrapezoidProfile.State();
   private void trackTarget() {
     double tx = limelightTable.getEntry("tx").getDouble(0.0);
     double tv = limelightTable.getEntry("tv").getDouble(0.0);
+
+    double currentVelocity = turretMotor.getVelocity().getValueAsDouble() * 2.0 * Math.PI;
+    double currentPosition =  turretMotor.getPosition().getValueAsDouble() * 2.0 * Math.PI;
     // If no target, stop turret
     if (tv < 1.0) {
       turretMotor.setControl(voltageRequest.withOutput(0));
+      setpoint =
+              new TrapezoidProfile.State(currentPosition, currentVelocity);
+
       return;
     }
 
     // Deadband
     if (Math.abs(tx) < kDeadband) {
       turretMotor.setControl(voltageRequest.withOutput(0));
+      setpoint = new TrapezoidProfile.State(currentPosition, 0.0);
       return;
     }
 
 
-    double goalAngle = turretMotor.getPosition().getValueAsDouble() + tx;
-    TrapezoidProfile.State goalState = new TrapezoidProfile.State(goalAngle, 0.0);
+//    double goalAngle = currentPosition + MathUtil.angleModulus(Math.toRadians(tx));
+//    goalAngle = MathUtil.clamp(goalAngle, -Math.PI, Math.PI);
+
+    double txRad = Math.toRadians(tx);
+
+// shortest path to target
+    double wrappedError = MathUtil.angleModulus(txRad);
+
+// propose goal
+    double proposedGoal =
+            currentPosition + wrappedError;
+
+//// enforce soft limits
+//    double goalAngle = MathUtil.clamp(
+//            proposedGoal,
+//            -Math.PI,
+//            Math.PI
+//    );
+
+
+    double bestAngle = Double.NaN;
+    double smallestError = Double.POSITIVE_INFINITY;
+
+    for (int k = -1; k <= 1; k++) {
+      double candidate = proposedGoal + k * 2.0 * Math.PI;
+
+      if (candidate >= -Math.PI && candidate <= Math.PI) {
+        double error = Math.abs(candidate - currentPosition);
+        if (error < smallestError) {
+          smallestError = error;
+          bestAngle = candidate;
+        }
+      }
+    }
+
+    if (Double.isNaN(bestAngle)) {
+      bestAngle = MathUtil.clamp(
+              proposedGoal,
+              -Math.PI,
+              Math.PI
+      );
+    }
+
+
+
+
+
+    TrapezoidProfile.State goalState = new TrapezoidProfile.State(bestAngle, 0.0);
 
     setpoint = profile.calculate(
             0.02,
             setpoint,
             goalState);
-    goalAngle = MathUtil.clamp(goalAngle, -180, 180);
 
-    double posError = setpoint.position * turretMotor.getPosition().getValueAsDouble(); //TODO: add the minus current position
-    double velError = setpoint.velocity * turretMotor.getVelocity().getValueAsDouble(); //TODO: add the minus current velocity
+
+    double posError = setpoint.position - currentPosition;
+    double velError = setpoint.velocity - currentVelocity;
     double outputVolts = kP * posError
                       + kD * velError;
 
 //    // Clamp voltage
-//    output = MathUtil.clamp(output, -kMaxOutput, kMaxOutput);
+    outputVolts = MathUtil.clamp(outputVolts, -kMaxOutput, kMaxOutput);
 
     turretMotor.setVoltage(outputVolts);
 //    turretMotor.getPosition()
