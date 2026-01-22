@@ -16,7 +16,7 @@ public class TurretSubsystem extends SubsystemBase {
   private final double kmaxVelocity = Math.toRadians(120); // 10 rad/s max
   private static final double kP = 0.1; // Proportional
   private static final double kI = 0.001; // Integral
-  private static final double kD = 0.2; // Derivative
+  private static final double kD = 0.1; // Derivative
   private static final double kMaxOutput = 12.0; // volts
   private static final double kDeadband = 0.5; // degrees
 
@@ -97,8 +97,8 @@ public class TurretSubsystem extends SubsystemBase {
     double proposedGoal = currentPosition + angleBias + txRad;
 
     // Soft limits in logical space
-    boolean atMin = proposedGoal <= kmaxlimit;
-    boolean atMax = proposedGoal >= kminlimit;
+    boolean atMin = proposedGoal <= kminlimit;
+    boolean atMax = proposedGoal >= kmaxlimit;
 
     // If target is beyond limits, unwrap ONCE and STAY THERE
     if (atMax && txRad > 0) {
@@ -136,8 +136,8 @@ public class TurretSubsystem extends SubsystemBase {
 
     //    double posError = setpoint.position - currentPosition;
     double posError = bestAngle - currentPosition;
-    double velError = setpoint.velocity - currentVelocity;
-    double outputVolts = kP * posError;
+    double velError = -currentVelocity;
+    double outputVolts = kP * posError + kD * velError;
     //    System.out.println(outputVolts + "Output Volts");
     //            + kD * velError;
 
