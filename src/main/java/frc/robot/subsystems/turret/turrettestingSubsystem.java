@@ -141,8 +141,7 @@ public class turrettestingSubsystem extends SubsystemBase {
     return Rotation2d.fromDegrees(bestTarget);
   }
 
-  public double calculate(
-      double currentAngleDeg, double currentVelocityDegPerSec, double deltaTimeSec) {
+  public double calculate(double currentAngleDeg, double currentVelocityDegPerSec, double deltaTimeSec) {
     //       currentAngleDeg = MathUtil.clamp(currentAngleDeg,MIN_ANGLE,MAX_ANGLE); //safe it or
     // smth
     targetAngle =
@@ -157,7 +156,10 @@ public class turrettestingSubsystem extends SubsystemBase {
     double accelleration = (setpoint.velocity - lastSetpoint.velocity) / deltaTimeSec;
 
     double output =
-        kP * positionError + kD * velocityError + kV * setpoint.velocity + kA * accelleration;
+                  kP * positionError
+                + kD * velocityError
+                + kV * setpoint.velocity
+                + kA * accelleration;
     output = MathUtil.clamp(output, -12.0, 12.0);
 
     lastSetpoint = setpoint;
