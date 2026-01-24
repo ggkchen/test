@@ -26,16 +26,16 @@ public class turrettestingSubsystem extends SubsystemBase {
 
   private static final double MAX_ANGLE = 720;
   private static final double MIN_ANGLE = -720;
-  private static final double MAX_VELOCITY_IN_DEG_PER_SEC = 90;
-  private static final double MAX_ACCELERATION_IN_DEG_PER_SEC = 180;
-  private static final double UNWIND_THRESHOLD = 540;
+  private static final double MAX_VELOCITY_IN_DEG_PER_SEC = 5;
+  private static final double MAX_ACCELERATION_IN_DEG_PER_SEC = 10;
+  private static final double UNWIND_THRESHOLD = 7000;
   private static final Rotation2d UNWIND_TARGET = Rotation2d.fromDegrees(0.0);
   private static final double GEAR_RATIO = 1.0; // 1:1
 
-  private final double kP = 2.0;
-  private final double kD = 0.1;
-  private final double kV = 0.12;
-  private final double kA = 0.02;
+  private final double kP = 0.01; // 2
+  private final double kD = 0.0; // 0.1
+  private final double kV = 0.06; // 0.12
+  private final double kA = 0.01; // 0.02
 
   private final TrapezoidProfile profile;
   private TrapezoidProfile.State lastSetpoint;
@@ -44,8 +44,7 @@ public class turrettestingSubsystem extends SubsystemBase {
   private boolean isUnwinding;
 
   public turrettestingSubsystem() {
-    limelightTable = NetworkTableInstance.getDefault().getTable("limelight-three");
-
+    limelightTable = NetworkTableInstance.getDefault().getTable("limelight-four");
     this.profile =
         new TrapezoidProfile(
             new TrapezoidProfile.Constraints(
@@ -61,6 +60,7 @@ public class turrettestingSubsystem extends SubsystemBase {
     config.CurrentLimits.SupplyCurrentLimit = 40.0;
     config.CurrentLimits.SupplyCurrentLimitEnable = true;
     turretMotor.getConfigurator().apply(config);
+    turretMotor.setPosition(0);
   }
 
   @Override
@@ -74,16 +74,22 @@ public class turrettestingSubsystem extends SubsystemBase {
     if (Math.abs(currentPositionDeg) > UNWIND_THRESHOLD) {
       isUnwinding = true;
       targetAngle = UNWIND_TARGET;
+      System.out.println("unwinding");
     } else if (isUnwinding && atGoal(currentPositionDeg)) {
       // Finished unwinding
+      System.out.println(
+          "DONEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE");
       isUnwinding = false;
     }
-    if (isUnwinding) {
-      targetAngle = UNWIND_TARGET;
-    } else {
+    if (!isUnwinding) {
       setTarget();
+      System.out.println("targeting");
     }
-
+    //    if (isUnwinding) {
+    //      System.out.println("is unwinding");
+    //      targetAngle = UNWIND_TARGET;
+    //    }
+    System.out.println(targetAngle + "" + atGoal(currentPositionDeg));
     voltage = calculate(currentPositionDeg, currentVelocityDegPerSec, 0.02);
     turretMotor.setControl(voltageRequest.withOutput(voltage));
   }
@@ -93,7 +99,10 @@ public class turrettestingSubsystem extends SubsystemBase {
     double tv = limelightTable.getEntry("tv").getDouble(0.0);
 
     if (tv < 1) {
-      targetAngle = Rotation2d.fromDegrees(getAbsolutePositionDeg());
+      System.out.print("no target");
+      //      turretMotor.setControl(voltageRequest.withOutput(0.0));
+      //      targetAngle = Rotation2d.fromDegrees(getAbsolutePositionDeg());
+      targetAngle = UNWIND_TARGET; // hold position
       return;
     }
 
@@ -104,7 +113,8 @@ public class turrettestingSubsystem extends SubsystemBase {
     //      targetAngle = UNWIND_TARGET;
     //    } else {
     // it ok no need to unwind
-    isUnwinding = false;
+    //    isUnwinding = false;
+    //    System.out.print("has target");
     targetAngle =
         findBestTarget(
             Rotation2d.fromDegrees(tx + getAbsolutePositionDeg()),
@@ -141,28 +151,51 @@ public class turrettestingSubsystem extends SubsystemBase {
     return Rotation2d.fromDegrees(bestTarget);
   }
 
-  public double calculate(double currentAngleDeg, double currentVelocityDegPerSec, double deltaTimeSec) {
+  public double calculate(
+      double currentAngleDeg, double currentVelocityDegPerSec, double deltaTimeSec) {
     //       currentAngleDeg = MathUtil.clamp(currentAngleDeg,MIN_ANGLE,MAX_ANGLE); //safe it or
     // smth
+
+    //    targetAngle =
+    //        Rotation2d.fromDegrees(MathUtil.clamp(targetAngle.getDegrees(), MIN_ANGLE,
+    // MAX_ANGLE));
+    //    TrapezoidProfile.State goal = new TrapezoidProfile.State(targetAngle.getRadians(), 0.0);
+    //
+    //    TrapezoidProfile.State setpoint = profile.calculate(deltaTimeSec, lastSetpoint, goal);
+    //
+    //    double velocityError = setpoint.velocity - Math.toRadians(currentVelocityDegPerSec);
+    //    double positionError = setpoint.position - Math.toRadians(currentAngleDeg);
+    //
+    //    double accelleration = (setpoint.velocity - lastSetpoint.velocity) / deltaTimeSec;
+    //    System.out.println(
+    //        "position error: "
+    //            + Math.toDegrees(positionError)
+    //            + " velocity error: "
+    //            + Math.toDegrees(velocityError)
+    //            + " setpoint vel: "
+    //            + Math.toDegrees(setpoint.velocity)
+    //            + " acceleration: "
+    //            + Math.toDegrees(accelleration));
+    //    double output =   kP * positionError
+    //                    + kD * velocityError
+    //                    + kV * setpoint.velocity
+    //                    + kA * accelleration;
+    //    output = MathUtil.clamp(output, -12.0, 12.0);
+    //
+    //    lastSetpoint = setpoint;
+    //
+    //    return output;
+
     targetAngle =
         Rotation2d.fromDegrees(MathUtil.clamp(targetAngle.getDegrees(), MIN_ANGLE, MAX_ANGLE));
-    TrapezoidProfile.State goal = new TrapezoidProfile.State(targetAngle.getRadians(), 0.0);
 
-    TrapezoidProfile.State setpoint = profile.calculate(deltaTimeSec, lastSetpoint, goal);
+    // Simple P control (no motion profile for now)
+    double positionError = targetAngle.getDegrees() - currentAngleDeg;
 
-    double velocityError = setpoint.velocity - Math.toRadians(currentVelocityDegPerSec);
-    double positionError = setpoint.position - Math.toRadians(currentAngleDeg);
-
-    double accelleration = (setpoint.velocity - lastSetpoint.velocity) / deltaTimeSec;
-
-    double output =
-                  kP * positionError
-                + kD * velocityError
-                + kV * setpoint.velocity
-                + kA * accelleration;
+    double output = kP * positionError;
     output = MathUtil.clamp(output, -12.0, 12.0);
 
-    lastSetpoint = setpoint;
+    //    System.out.println("Error: " + positionError + " Output: " + output);
 
     return output;
   }
@@ -180,6 +213,7 @@ public class turrettestingSubsystem extends SubsystemBase {
   public boolean atGoal(double currentPositionDeg) {
     double positionError = Math.abs(targetAngle.getDegrees() - currentPositionDeg);
     double velocityError = Math.abs(getVelocityDegPerSec());
-    return positionError < 2.0 && velocityError < 3.0;
+    System.out.println(positionError + "   egrnkjnkjrekjgnkj   " + velocityError);
+    return positionError < 25.0 && velocityError < 3.0;
   }
 }
