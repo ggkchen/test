@@ -53,9 +53,9 @@ public class ShooterSubsystem extends SubsystemBase {
   private static final InterpolatingDoubleTreeMap shotFlywheelSpeedMap =
       new InterpolatingDoubleTreeMap();
 
-  private ShooterSubsystem() {
+  public ShooterSubsystem() {
     var config = new TalonFXConfiguration();
-    config.MotorOutput.NeutralMode = NeutralModeValue.Brake;
+    config.MotorOutput.NeutralMode = NeutralModeValue.Coast;
     config.CurrentLimits.SupplyCurrentLimit = 40.0;
     config.CurrentLimits.SupplyCurrentLimitEnable = true;
     shooterMotor.getConfigurator().apply(config);
