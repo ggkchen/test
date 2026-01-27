@@ -9,7 +9,10 @@ import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.controller.SimpleMotorFeedforward;
 import edu.wpi.first.math.interpolation.InterpolatingDoubleTreeMap;
 import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
+
+import java.util.function.DoubleSupplier;
 
 public class ShooterSubsystem extends SubsystemBase {
   private static final ShooterSubsystem INSTANCE = new ShooterSubsystem();
@@ -28,10 +31,10 @@ public class ShooterSubsystem extends SubsystemBase {
 
   private ShooterState state = ShooterState.IDLE;
 
-  double currentTime = Timer.getFPGATimestamp();
+  private final DoubleSupplier currentTime = Timer::getFPGATimestamp;
 
   static final double kS = 0.2; // static friction (volts)
-  static final double kV = 0.114; // volts per RPS //0.10475
+  static final double kV = 0.114; // volts per RPS //0.10475 to tune use dutycycleout run it to 70 rps and kV = voltage / 70 RPS
   static final double kA = 0.001; // volts per RPS^2
 
   static final double kP = 1.0;
@@ -48,6 +51,7 @@ public class ShooterSubsystem extends SubsystemBase {
   private final TalonFX shooterMotor = new TalonFX(1); // chjange ID
   private static final double GEAR_RATIO = 1.0; // 1:1
 
+  private double timeAtSpeed = 0.0;
   private double lastRPM = 0.0;
   private boolean worked = false;
   SimpleMotorFeedforward feedforward = new SimpleMotorFeedforward(kS, kV, kA);
@@ -73,14 +77,21 @@ public class ShooterSubsystem extends SubsystemBase {
 
   public ShooterSubsystem() {
     var config = new TalonFXConfiguration();
-    config.MotorOutput.NeutralMode = NeutralModeValue.Coast;
+    config.MotorOutput.NeutralMode = NeutralModeValue.Brake;
     config.CurrentLimits.SupplyCurrentLimit = 40.0;
     config.CurrentLimits.SupplyCurrentLimitEnable = true;
     shooterMotor.getConfigurator().apply(config);
+
+    SmartDashboard.putNumber("Shooter/kP", kP);
+    SmartDashboard.putNumber("Shooter/kD", kD);
+    SmartDashboard.putNumber("Shooter/kV", kV);
   }
 
   @Override
   public void periodic() {
+    double tuneP = SmartDashboard.getNumber("Shooter/kP", kP); //test
+    double tuneD = SmartDashboard.getNumber("Shooter/kD", kD);
+
     double distance = getTargetDistance(); // change
 
     double baseRPM = shotFlywheelSpeedMap.get(distance);
@@ -96,13 +107,14 @@ public class ShooterSubsystem extends SubsystemBase {
 
     if (rpmSlope < -7500) {
       shotRecentlyFired = true;
-      lastShotTime = currentTime;
+      lastShotTime = currentTime.getAsDouble();
     }
 
-    if (shotRecentlyFired && ((currentTime - lastShotTime) > 0.2)
+    if (shotRecentlyFired && ((currentTime.getAsDouble() - lastShotTime) > 0.2)
         || currentRPS >= targetRPS - 20.0 / 60.0) {
       shotRecentlyFired = false;
     }
+
 
     lastRPM = currentRPM;
     switch (state) {
@@ -162,14 +174,10 @@ public class ShooterSubsystem extends SubsystemBase {
     }
 
     double ffVolts = feedforward.calculate(targetRPS);
-
+      // maybe add deadband here for osolation?
     double pidVolts = PID.calculate(currentRPS, targetRPS);
     double output = ffVolts + pidVolts;
 
-    // Run PID
-    double voltage =
-        feedforward.calculate(targetRPS) + velocityPID.calculate(currentRPS, targetRPS);
-    shooterMotor.setControl(voltageRequest.withOutput(MathUtil.clamp(voltage, -12.0, 12.0)));
 
     lastTargetRPS = targetRPS;
     output = MathUtil.clamp(output, -12.0, 12.0);
@@ -185,7 +193,7 @@ public class ShooterSubsystem extends SubsystemBase {
     return 2.0;
   }
 
-  private boolean isAtspeed(double targetRPS, double currentRPS, double toleranceRM) {
+  private boolean isAtSpeed(double targetRPS, double currentRPS, double toleranceRM) {
     return (Math.abs(currentRPS * 60.0 - targetRPS * 60.0) <= toleranceRM);
   }
 }
