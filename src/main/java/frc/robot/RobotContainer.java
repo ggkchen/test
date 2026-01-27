@@ -9,15 +9,14 @@ package frc.robot;
 
 import static frc.robot.subsystems.vision.VisionConstants.*;
 
-import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.wpilibj.GenericHID;
 import edu.wpi.first.wpilibj.XboxController;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.Commands;
-import edu.wpi.first.wpilibj2.command.button.CommandGenericHID;
+import edu.wpi.first.wpilibj2.command.button.CommandPS5Controller;
 import frc.robot.subsystems.drive.DemoDrive;
-// import frc.robot.subsystems.turret.TurretSubsystem;
-import frc.robot.subsystems.turret.turrettestingSubsystem;
+import frc.robot.subsystems.turret.ShooterSubsystem;
+import frc.robot.subsystems.turret.TurretSubsystem;
 import frc.robot.subsystems.vision.Vision;
 import frc.robot.subsystems.vision.VisionIO;
 import frc.robot.subsystems.vision.VisionIOLimelight;
@@ -31,11 +30,11 @@ import frc.robot.subsystems.vision.VisionIOPhotonVisionSim;
  */
 public class RobotContainer {
   private final Vision vision;
-  //  public final TurretSubsystem turret = new TurretSubsystem();
-  public final turrettestingSubsystem turret = new turrettestingSubsystem();
+  public final TurretSubsystem turret = new TurretSubsystem();
+  public final ShooterSubsystem shooter = ShooterSubsystem.getInstance();
   private final DemoDrive drive = new DemoDrive(); // Demo drive subsystem, sim only
-  private final CommandGenericHID keyboard = new CommandGenericHID(0); // Keyboard 0 on port 0
-
+  //  private final CommandGenericHID keyboard = new CommandGenericHID(0); // Keyboard 0 on port 0
+  private final CommandPS5Controller ps5Controller = new CommandPS5Controller(0); // PS5 on port 1
   /** The container for the robot. Contains subsystems, OI devices, and commands. */
   public RobotContainer() {
     switch (Constants.currentMode) {
@@ -80,29 +79,50 @@ public class RobotContainer {
    * edu.wpi.first.wpilibj2.command.button.JoystickButton}.
    */
   private void configureButtonBindings() {
+    ps5Controller
+        .circle()
+        .onTrue(
+            Commands.runOnce(
+                () -> shooter.setState(ShooterSubsystem.ShooterState.SPIN_UP), shooter));
+    ps5Controller
+        .R1()
+        .onTrue(
+            Commands.runOnce(
+                () -> shooter.setState(ShooterSubsystem.ShooterState.RAPID_FIRE), shooter));
+    ps5Controller
+        .L1()
+        .onTrue(
+            Commands.runOnce(
+                () -> shooter.setState(ShooterSubsystem.ShooterState.RAPID_FIRE_ACCURATE),
+                shooter));
+    ps5Controller
+        .triangle()
+        .onTrue(
+            Commands.runOnce(() -> shooter.setState(ShooterSubsystem.ShooterState.IDLE), shooter));
+
     // Joystick drive command
-    drive.setDefaultCommand(
-        Commands.run(
-            () -> {
-              drive.run(-keyboard.getRawAxis(1), -keyboard.getRawAxis(0));
-            },
-            drive));
+    //    drive.setDefaultCommand(
+    //        Commands.run(
+    //            () -> {
+    //              drive.run(-keyboard.getRawAxis(1), -keyboard.getRawAxis(0));
+    //            },
+    //            drive));
 
     // Auto aim command example
-    @SuppressWarnings("resource")
-    PIDController aimController = new PIDController(0.2, 0.0, 0.0);
-    aimController.enableContinuousInput(-Math.PI, Math.PI);
-    keyboard
-        .button(1)
-        .whileTrue(
-            Commands.startRun(
-                () -> {
-                  aimController.reset();
-                },
-                () -> {
-                  drive.run(0.0, aimController.calculate(vision.getTargetX(0).getRadians()));
-                },
-                drive));
+    //    @SuppressWarnings("resource")
+    //    PIDController aimController = new PIDController(0.2, 0.0, 0.0);
+    //    aimController.enableContinuousInput(-Math.PI, Math.PI);
+    //    keyboard
+    //        .button(1)
+    //        .whileTrue(
+    //            Commands.startRun(
+    //                () -> {
+    //                  aimController.reset();
+    //                },
+    //                () -> {
+    //                  drive.run(0.0, aimController.calculate(vision.getTargetX(0).getRadians()));
+    //                },
+    //                drive));
   }
 
   /**
