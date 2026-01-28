@@ -6,13 +6,19 @@ import com.ctre.phoenix6.hardware.TalonFX;
 import com.ctre.phoenix6.signals.InvertedValue;
 import com.ctre.phoenix6.signals.NeutralModeValue;
 import edu.wpi.first.math.MathUtil;
+import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Transform2d;
+import edu.wpi.first.math.geometry.Translation2d;
+import edu.wpi.first.math.interpolation.InterpolatingDoubleTreeMap;
 import edu.wpi.first.math.trajectory.TrapezoidProfile;
+import edu.wpi.first.math.util.Units;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
-
+//TODO: start making it target a pose not limelight, make limelight update the pose, but reject bad data thats too far away, start making shooting on the move
+//TODO: merge this with advantagekit talonfx swerve code
 public class turrettestingSubsystem extends SubsystemBase {
 
   private static final turrettestingSubsystem INSTANCE = new turrettestingSubsystem();
@@ -21,7 +27,19 @@ public class turrettestingSubsystem extends SubsystemBase {
     return INSTANCE;
   }
 
+  private static double VISION_LATENCY;
+
   private final NetworkTable limelightTable;
+  private final Translation2d HUB_POSE = new Translation2d(
+          Units.inchesToMeters(182.11),
+          Units.inchesToMeters(158.84)
+          );
+  private static final double VISION_KP = 0.015;
+  Pose2d robotPose;
+
+  private Translation2d fieldVelocity;
+
+  private static final Translation2d robotToTurret = new Translation2d(0.35, 0.10);
 
   private final TalonFX turretMotor = new TalonFX(3);
   private final VoltageOut voltageRequest = new VoltageOut(0);
@@ -50,6 +68,13 @@ public class turrettestingSubsystem extends SubsystemBase {
 
   private double lastTimeAtGoal = 0;
 
+  private static final InterpolatingDoubleTreeMap ballFlightTimeMap =
+          new InterpolatingDoubleTreeMap();
+  static {
+    // this is example later replace
+    ballFlightTimeMap.put(2.0, 0.42); //distance in meters, time in seconds
+  }
+
   public turrettestingSubsystem() {
     limelightTable = NetworkTableInstance.getDefault().getTable("limelight-three");
     this.profile =
@@ -74,6 +99,14 @@ public class turrettestingSubsystem extends SubsystemBase {
   @Override
   public void periodic() {
     // This method will be called once per scheduler run
+    VISION_LATENCY = (limelightTable.getEntry("tl").getDouble(0.0) +
+                      limelightTable.getEntry("cl").getDouble(0.0)) / 1000.0;
+    robotPose = Drive.getPose();
+    fieldVelocity = new Translation2d(
+            Drive.getChassisSpeeds().vxMetersPerSecond,
+            Drive.getChassisSpeeds().vyMetersPerSecond
+    ).rotateBy(robotPose.getRotation());
+
     double currentPositionDeg = getAbsolutePositionDeg();
     double currentVelocityDegPerSec = getVelocityDegPerSec();
 
@@ -93,7 +126,7 @@ public class turrettestingSubsystem extends SubsystemBase {
       wrappingAround = false;
     }
     if (!isUnwinding && !wrappingAround) {
-      setTarget();
+      targetAngle = findBestTarget(Rotation2d.fromRadians(calculateTurretgoalRad(robotPose, fieldVelocity, Drive.getChassisSpeeds().omegaRadiansPerSecond)), currentPositionDeg);
       //      System.out.println("targeting");
     }
     if (isUnwinding) {
@@ -106,18 +139,33 @@ public class turrettestingSubsystem extends SubsystemBase {
     turretMotor.setControl(voltageRequest.withOutput(voltage));
   }
 
-  public void setTarget() {
+  public void setTarget(Pose2d robotPose, Translation2d robotVelocity, double robotOmegaRadPerSec) {
     double tx = limelightTable.getEntry("tx").getDouble(0.0);
     double tv = limelightTable.getEntry("tv").getDouble(0.0);
 
-    if (tv < 1) {
-      //      System.out.print("no target");
 
-      //      turretMotor.setControl(voltageRequest.withOutput(0.0));
-      //      targetAngle = Rotation2d.fromDegrees(getAbsolutePositionDeg());
-      targetAngle = targetAngle; // hold position
-      return;
-    }
+//    if (tv < 1) {
+//      //      System.out.print("no target");
+//
+//      //      turretMotor.setControl(voltageRequest.withOutput(0.0));
+//      //      targetAngle = Rotation2d.fromDegrees(getAbsolutePositionDeg());
+//      targetAngle = targetAngle; // hold position
+//      return;
+//    }
+    Translation2d turretPose =
+            robotPose.getTranslation().plus(
+                    robotToTurret.rotateBy(robotPose.getRotation())
+            );
+
+    Translation2d toHub =
+            HUB_POSE.minus(turretPose);
+    //field relative angle
+    double fieldAngle = Math.atan2(toHub.getY(), toHub.getX());
+
+    double desiredTurretAngle = MathUtil.angleModulus(
+            fieldAngle - robotPose.getRotation().getRadians()
+    );
+
 
     //    // see if we need to unwind
     //    if (Math.abs(turretMotor.getPosition().getValueAsDouble()) > UNWIND_THRESHOLD) {
@@ -128,10 +176,18 @@ public class turrettestingSubsystem extends SubsystemBase {
     // it ok no need to unwind
     //    isUnwinding = false;
     //    System.out.print("has target");
-    targetAngle =
-        findBestTarget(
-            Rotation2d.fromDegrees(tx + getAbsolutePositionDeg()),
-            getAbsolutePositionDeg()); // target from vision
+    targetAngle = Rotation2d.fromDegrees(desiredTurretAngle);
+
+//            findBestTarget(
+//            Rotation2d.fromRadians(desiredTurretAngle),
+//            getAbsolutePositionDeg()
+//            );
+
+
+//        findBestTarget(
+//            Rotation2d.fromDegrees(tx + getAbsolutePositionDeg()),
+//            getAbsolutePositionDeg()); // target from vision
+
     //    }
   }
 
@@ -171,7 +227,7 @@ public class turrettestingSubsystem extends SubsystemBase {
 
   public double calculate(
       double currentAngleDeg, double currentVelocityDegPerSec, double deltaTimeSec) {
-    currentAngleDeg = MathUtil.clamp(currentAngleDeg, MIN_ANGLE, MAX_ANGLE); // safe it or smth
+//    currentAngleDeg = MathUtil.clamp(currentAngleDeg, MIN_ANGLE, MAX_ANGLE); // safe it or smth
     targetAngle =
         Rotation2d.fromDegrees(MathUtil.clamp(targetAngle.getDegrees(), MIN_ANGLE, MAX_ANGLE));
     TrapezoidProfile.State goal = new TrapezoidProfile.State(targetAngle.getRadians(), 0.0);
@@ -230,6 +286,74 @@ public class turrettestingSubsystem extends SubsystemBase {
     return (motorRPS / GEAR_RATIO) * 360.0;
   }
 
+  public double applyAngularLead(double turretAngleRad, double robotOmegaRadPerSec, Pose2d robotPose) {
+    double totalTime;
+    if (isVisionTrustworthy(limelightTable.getEntry("tx").getDouble(0.0), Math.toRadians(getVelocityDegPerSec()), robotOmegaRadPerSec, getDistanceFromHub(robotPose))) {
+      totalTime = VISION_LATENCY + ballFlightTimeMap.get(getDistanceFromHub(robotPose));
+    } else {
+      totalTime = ballFlightTimeMap.get(getDistanceFromHub(robotPose));
+    }
+      return turretAngleRad + robotOmegaRadPerSec * totalTime;
+
+  }
+
+  public double applyTranslationalLead(double turretAngleRad, Translation2d robotVelocity, double robotOmegaRadPerSec, Rotation2d robotHeading, Translation2d turretToHub) {
+    Translation2d turretVelocity =
+            robotVelocity.plus(
+                    new Translation2d(
+                            -robotOmegaRadPerSec * robotToTurret.getY(),
+                            robotOmegaRadPerSec * robotToTurret.getX()
+                    )
+            );
+
+    Translation2d shotDirection =
+            turretToHub.div(turretToHub.getNorm());
+
+    Translation2d lateralDir =
+            new Translation2d(-shotDirection.getY(), shotDirection.getX());
+
+    double distance = turretToHub.getNorm();
+    double lateralVelocity =
+            turretVelocity.getX() * lateralDir.getX() +
+            turretVelocity.getY() * lateralDir.getY();
+
+    double lead = Math.atan2(
+            lateralVelocity * ballFlightTimeMap.get(distance),
+            distance
+    );
+
+    return turretAngleRad + lead;
+  }
+
+  public static double applyVisionCorrection(double turretAngleRad, double txDeg, double turretAngularVelocity) {
+    // if moving fast, ignore correction
+//    if (Math.abs(turretAngularVelocity) > Math.toRadians(120)) {
+//      return turretAngleRad;
+//    }
+    //vision nudgey
+    return turretAngleRad + MathUtil.clamp(VISION_KP * Math.toRadians(txDeg), -Math.toRadians(5), Math.toRadians(5));
+  }
+
+  public static boolean isVisionTrustworthy(double tx, double turretOmega, double robotOmega, double distance) {
+    return  Math.abs(Math.toRadians(tx)) < Math.toRadians(5.0) &&
+            Math.abs(turretOmega) < Math.toRadians(120) &&
+            Math.abs(robotOmega) < Math.toRadians(180) &&
+            distance < 6.0;
+  }
+
+
+  public double getDistanceFromHub(Pose2d robotPose) {
+    Translation2d turretPose =
+            robotPose.getTranslation().plus(
+                    robotToTurret.rotateBy(robotPose.getRotation())
+            );
+
+    Translation2d toHub =
+            HUB_POSE.minus(turretPose);
+
+    return toHub.getNorm();
+  }
+
   public boolean atGoal(double currentPositionDeg) {
     double positionError = Math.abs(targetAngle.getDegrees() - currentPositionDeg);
     double velocityError = Math.abs(getVelocityDegPerSec());
@@ -242,4 +366,20 @@ public class turrettestingSubsystem extends SubsystemBase {
     //    return positionError < 25.0 && velocityError < 3.0;
     return false;
   }
+
+  public double calculateTurretgoalRad(Pose2d robotPose, Translation2d robotVelocity, double robotOmega) {
+    setTarget(robotPose, robotVelocity, robotOmega);
+    double angle = targetAngle.getRadians();
+    angle = applyAngularLead(angle, robotOmega, robotPose);
+
+    angle = applyTranslationalLead(angle, robotVelocity, robotOmega, robotPose.getRotation(), HUB_POSE.minus(robotPose.getTranslation().plus(robotToTurret.rotateBy(robotPose.getRotation()))));
+
+    if (isVisionTrustworthy(limelightTable.getEntry("tx").getDouble(0.0), Math.toRadians(getVelocityDegPerSec()), robotOmega, getDistanceFromHub(robotPose))) {
+      angle = applyVisionCorrection(angle, limelightTable.getEntry("tx").getDouble(0.0), Math.toRadians(getVelocityDegPerSec()));
+    }
+
+    angle = MathUtil.clamp(angle, Math.toRadians(MIN_ANGLE), Math.toRadians(MAX_ANGLE));
+    return angle;
+  }
+
 }
