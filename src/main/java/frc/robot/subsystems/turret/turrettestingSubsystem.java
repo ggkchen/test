@@ -122,7 +122,7 @@ public class turrettestingSubsystem extends SubsystemBase {
       //
       // "DONEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE");
       isUnwinding = false;
-    } else if (wrappingAround && atGoal(currentPositionDeg)) {
+    } else if (wrappingAround && atGoal(currentPositionDeg)) {1
       wrappingAround = false;
     }
     if (!isUnwinding && !wrappingAround) {
@@ -176,7 +176,7 @@ public class turrettestingSubsystem extends SubsystemBase {
     // it ok no need to unwind
     //    isUnwinding = false;
     //    System.out.print("has target");
-    targetAngle = Rotation2d.fromDegrees(desiredTurretAngle);
+    targetAngle = Rotation2d.fromRadians(desiredTurretAngle);
 
 //            findBestTarget(
 //            Rotation2d.fromRadians(desiredTurretAngle),
