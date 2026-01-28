@@ -8,7 +8,6 @@ import com.ctre.phoenix6.signals.NeutralModeValue;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
-import edu.wpi.first.math.geometry.Transform2d;
 import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.interpolation.InterpolatingDoubleTreeMap;
 import edu.wpi.first.math.trajectory.TrapezoidProfile;
@@ -37,7 +36,7 @@ public class turrettestingSubsystem extends SubsystemBase {
   private static final double VISION_KP = 0.015;
   Pose2d robotPose;
 
-  private Translation2d fieldVelocity;
+  private Translation2d robotFieldVelocity;
 
   private static final Translation2d robotToTurret = new Translation2d(0.35, 0.10);
 
@@ -67,6 +66,7 @@ public class turrettestingSubsystem extends SubsystemBase {
   private boolean wrappingAround;
 
   private double lastTimeAtGoal = 0;
+  private double lastTimestamp = Timer.getFPGATimestamp();
 
   private static final InterpolatingDoubleTreeMap ballFlightTimeMap =
           new InterpolatingDoubleTreeMap();
@@ -102,7 +102,7 @@ public class turrettestingSubsystem extends SubsystemBase {
     VISION_LATENCY = (limelightTable.getEntry("tl").getDouble(0.0) +
                       limelightTable.getEntry("cl").getDouble(0.0)) / 1000.0;
     robotPose = Drive.getPose();
-    fieldVelocity = new Translation2d(
+    robotFieldVelocity = new Translation2d(
             Drive.getChassisSpeeds().vxMetersPerSecond,
             Drive.getChassisSpeeds().vyMetersPerSecond
     ).rotateBy(robotPose.getRotation());
@@ -122,11 +122,11 @@ public class turrettestingSubsystem extends SubsystemBase {
       //
       // "DONEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE");
       isUnwinding = false;
-    } else if (wrappingAround && atGoal(currentPositionDeg)) {1
+    } else if (wrappingAround && atGoal(currentPositionDeg)) {
       wrappingAround = false;
     }
     if (!isUnwinding && !wrappingAround) {
-      targetAngle = findBestTarget(Rotation2d.fromRadians(calculateTurretgoalRad(robotPose, fieldVelocity, Drive.getChassisSpeeds().omegaRadiansPerSecond)), currentPositionDeg);
+      targetAngle = findBestTarget(Rotation2d.fromRadians(calculateTurretgoalRad(robotPose, robotFieldVelocity, Drive.getChassisSpeeds().omegaRadiansPerSecond)), currentPositionDeg);
       //      System.out.println("targeting");
     }
     if (isUnwinding) {
@@ -228,16 +228,23 @@ public class turrettestingSubsystem extends SubsystemBase {
   public double calculate(
       double currentAngleDeg, double currentVelocityDegPerSec, double deltaTimeSec) {
 //    currentAngleDeg = MathUtil.clamp(currentAngleDeg, MIN_ANGLE, MAX_ANGLE); // safe it or smth
+
+    double now = Timer.getFPGATimestamp();
+    double dt = now - lastTimestamp;
+    lastTimestamp = now;
+
+    if (dt <= 0) dt = 0.02;
+
     targetAngle =
         Rotation2d.fromDegrees(MathUtil.clamp(targetAngle.getDegrees(), MIN_ANGLE, MAX_ANGLE));
     TrapezoidProfile.State goal = new TrapezoidProfile.State(targetAngle.getRadians(), 0.0);
 
-    TrapezoidProfile.State setpoint = profile.calculate(deltaTimeSec, lastSetpoint, goal);
+    TrapezoidProfile.State setpoint = profile.calculate(dt, lastSetpoint, goal);
 
     double velocityError = setpoint.velocity - Math.toRadians(currentVelocityDegPerSec);
     double positionError = setpoint.position - Math.toRadians(currentAngleDeg);
 
-    double accelleration = (setpoint.velocity - lastSetpoint.velocity) / deltaTimeSec;
+    double accelleration = (setpoint.velocity - lastSetpoint.velocity) / dt;
     System.out.println(
         "position error: "
             + Math.toDegrees(positionError)
@@ -289,7 +296,8 @@ public class turrettestingSubsystem extends SubsystemBase {
   public double applyAngularLead(double turretAngleRad, double robotOmegaRadPerSec, Pose2d robotPose) {
     double totalTime;
     if (isVisionTrustworthy(limelightTable.getEntry("tx").getDouble(0.0), Math.toRadians(getVelocityDegPerSec()), robotOmegaRadPerSec, getDistanceFromHub(robotPose))) {
-      totalTime = VISION_LATENCY + ballFlightTimeMap.get(getDistanceFromHub(robotPose));
+//      totalTime = VISION_LATENCY + ballFlightTimeMap.get(getDistanceFromHub(robotPose));
+      totalTime = ballFlightTimeMap.get(getDistanceFromHub(robotPose));
     } else {
       totalTime = ballFlightTimeMap.get(getDistanceFromHub(robotPose));
     }
@@ -335,7 +343,7 @@ public class turrettestingSubsystem extends SubsystemBase {
   }
 
   public static boolean isVisionTrustworthy(double tx, double turretOmega, double robotOmega, double distance) {
-    return  Math.abs(Math.toRadians(tx)) < Math.toRadians(5.0) &&
+    return  Math.abs(tx) < 5.0 &&
             Math.abs(turretOmega) < Math.toRadians(120) &&
             Math.abs(robotOmega) < Math.toRadians(180) &&
             distance < 6.0;
